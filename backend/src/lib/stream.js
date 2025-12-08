@@ -1,4 +1,5 @@
 import {StreamChat} from 'stream-chat';
+import {StreamClient} from '@stream-io/node-sdk';
 import {ENV} from './env.js';
 
 const apiKey=ENV.STREAM_API_KEY
@@ -8,7 +9,9 @@ if(!apiKey || !apiSecret) {
     console.log("Stream API key or secret is missing. ");
 }
 
-export const chatClient = StreamChat.getInstance(apiKey, apiSecret);
+export const streamClient=new StreamClient(apiKey, apiSecret); // this is for activity feed feature
+export const chatClient = StreamChat.getInstance(apiKey, apiSecret); // this is for chat feature
+
 
 export const upsertStreamUser = async (userData) => {
     try {
