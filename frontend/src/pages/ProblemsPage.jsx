@@ -1,3 +1,5 @@
+console.log("ProblemPage file is loading");
+
 import { Link } from "react-router";
 import Navbar from "../components/Navbar";
 
