@@ -1,50 +1,111 @@
 import { chatClient, streamClient } from "../lib/stream.js";
 import Session from "../models/Session.js";
-export async function createSession(req, res) {
-    try {
-        const [problem, difficulty] = req.body;
-        const userId = req.user._id;
-        const clerkId = req.user.clerkId;
+import User from "../models/User.js"; //fixed missing import
 
-        if (!problem || !difficulty) {
-            return res.status(400).json({ message: "Problem and difficulty are required" });
-        }
+// export async function createSession(req, res) {
+//     try {
+//         const [problem, difficulty] = req.body;
+//         const userId = req.user._id;
+//         const clerkId = req.user.clerkId;
 
-        const callId = `call_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+//         if (!problem || !difficulty) {
+//             return res.status(400).json({ message: "Problem and difficulty are required" });
+//         }
 
-        const session= new Session({
-            problem,
-            difficulty,
-            host: userId,
-            callId
-        });
+//         const callId = `call_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+
+//         const session= new Session({
+//             problem,
+//             difficulty,
+//             host: userId,
+//             callId
+//         });
         
-        await streamClient.video.call("default", callId).getOrCreate({
-            data: { 
-                created_by_id: clerkId,
-                custom:{
-                    problem,difficulty,sessionId:session._id.toString()
-                },
-            },
-        });
+//         await streamClient.video.call("default", callId).getOrCreate({
+//             data: { 
+//                 created_by_id: clerkId,
+//                 custom:{
+//                     problem,difficulty,sessionId:session._id.toString()
+//                 },
+//             },
+//         });
 
-        const channel = chatClient.channel("messaging", callId, {
-            name:`${problem} Session`,
-            created_by_id: clerkId,
-            members: [clerkId],
-        });
+//         const channel = chatClient.channel("messaging", callId, {
+//             name:`${problem} Session`,
+//             created_by_id: clerkId,
+//             members: [clerkId],
+//         });
 
-        await channel.create();
-        res.status(201).json({ message: "Session created successfully", session });
-    } catch (error) {
-        console.error("Error creating session:", error);
-        res.status(500).json({ message: "Internal server error" });
+//         await channel.create();
+//         res.status(201).json({ message: "Session created successfully", session });
+//     } catch (error) {
+//         console.error("Error creating session:", error);
+//         res.status(500).json({ message: "Internal server error" });
+//     }
+// }
+
+export async function createSession(req, res) {
+  try {
+    const { problem, difficulty } = req.body;     // <-- FIXED
+    const clerkId = req.auth.userId;              // <-- FIXED
+
+    if (!problem || !difficulty) {
+      return res.status(400).json({ message: "Problem and difficulty are required" });
     }
+
+    // find the MongoDB user that matches clerkId
+    const host = await User.findOne({ clerkId });
+
+    if (!host) {
+      return res.status(404).json({ message: "User not found in database" });
+    }
+
+    const callId = `call_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+
+    const session = new Session({
+      problem,
+      difficulty,
+      host: host._id,          // <- Correct Mongo _id
+      callId,
+    });
+
+    await session.save();      // <-- You forgot this earlier
+
+    // STREAM - create video call
+    await streamClient.video.call("default", callId).getOrCreate({
+      data: {
+        created_by_id: clerkId,
+        custom: {
+          problem,
+          difficulty,
+          sessionId: session._id.toString(),
+        },
+      },
+    });
+
+    // STREAM - create chat channel
+    const channel = chatClient.channel("messaging", callId, {
+      name: `${problem} Session`,
+      created_by_id: clerkId,
+      members: [clerkId],
+    });
+
+    await channel.create();
+
+    res.status(201).json({ message: "Session created successfully", session });
+
+  } catch (error) {
+    console.error("Error creating session:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
 }
 
 export async function getActiveSessions(_, res) {
     try {
-        const sessions=await Session.find({status:"active"}).populate('host','name profileImage email clerkId').sort({createdAt:-1}).limit(20);
+        const sessions=await Session.find({status:"active"})
+        .populate('host','name profileImage email clerkId')
+        .populate('participant','name profileImage email clerkId')
+        .sort({createdAt:-1}).limit(20);
         res.status(200).json({ sessions });
     } catch (error) {
         console.error("Error fetching active sessions:", error);
